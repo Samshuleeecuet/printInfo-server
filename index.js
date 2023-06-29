@@ -52,11 +52,12 @@ async function run() {
     // Database connection ( Using CUET Mail)
     const database = client.db("PrinterInfo");
     const users = database.collection("users");
-    
+    const printCollection = database.collection("printInfo");
+    const paymentCollection = database.collection("paymentInfo")
     //JWT Implement
     app.post('/jwt',(req,res)=>{
         const user = req.body;
-        const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '1h'})
+        const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '24h'})
         res.send({token}) 
       })
 
@@ -64,7 +65,6 @@ async function run() {
     app.get('/user/:email',async(req,res)=>{
         const email = req.params.email
         const result = await users.findOne({email:email})
-        console.log(result)
         res.send(result)
     })
 
@@ -84,6 +84,77 @@ async function run() {
             res.send(result)
         }
         
+    })
+
+    // Admin get & save Print information
+    app.get('/adminprintinfo',verifyJWT,async(req,res)=>{
+      const search = req.query.search
+      const option = {
+        sort: {
+          date: 1
+        }
+      }
+        const result = await printCollection.find({
+        cuetId: {$regex: search, $options: "i"} },option).toArray();
+        return res.send(result)
+    })
+    app.post('/adminprintinfo',async(req,res)=>{
+      const printInfo = req.body;
+      const query = {
+        cuetId: printInfo.cuetId
+      }
+      const paymentUser = await paymentCollection.findOne(query)
+      if(!paymentUser){
+        const paymentDoc = {name:printInfo.name,cuetId : printInfo.cuetId,total: printInfo.total, due: printInfo.total , paid : 0,date: new Date()}
+        const insertResult = await paymentCollection.insertOne(paymentDoc)
+      }
+      if(paymentUser){
+        let newTotal = parseInt(paymentUser.total)+parseInt(printInfo.total)
+        let newDue = parseInt(paymentUser.due)+parseInt(printInfo.total)
+        const updatedDoc = {
+            $set:{
+              total : newTotal,
+              due : newDue,
+              date : printInfo.date
+            }
+        }
+        let updateResult = await paymentCollection.updateOne(query,updatedDoc)
+      }
+      const result = await printCollection.insertOne(printInfo)
+      res.send(result)
+    })
+
+
+    // Admin Get All Payment Information
+    app.get('/adminpaymentinfo',verifyJWT,async(req,res)=>{
+      const search = req.query.search
+      const option = {
+        sort: {
+          date: 1
+        }
+      }
+        const result = await paymentCollection.find({
+        cuetId: {$regex: search, $options: "i"} },option).toArray();
+        return res.send(result)
+    })
+
+
+
+    // USER
+
+    // user get print information
+    app.get('/userprintinfo',verifyJWT,async(req,res)=>{
+      const cuetId = req.query.cuetId
+      const query = {
+        cuetId : cuetId
+      }
+      const option = {
+        sort: {
+          date: 1
+        }
+      }
+        const result = await printCollection.find(query,option).toArray();
+        return res.send(result)
     })
 
   } finally{
