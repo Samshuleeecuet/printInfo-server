@@ -1,4 +1,8 @@
+const Sib = require('sib-api-v3-sdk')
 require('dotenv').config()
+const client1 = Sib.ApiClient.instance
+const apiKey = client1.authentications['api-key']
+apiKey.apiKey = process.env.API_KEY
 const express = require('express')
 const jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -6,6 +10,7 @@ require('mongodb');
 const port = process.env.PORT || 5000 ;
 const app = express()
 const cors = require('cors')
+const tranEmailApi = new Sib.TransactionalEmailsApi()
 
 
 const corsOptions ={
@@ -54,6 +59,7 @@ async function run() {
     const users = database.collection("users");
     const printCollection = database.collection("printInfo");
     const paymentCollection = database.collection("paymentInfo")
+    const paymentHistory = database.collection("paymentHistory")
     //JWT Implement
     app.post('/jwt',(req,res)=>{
         const user = req.body;
@@ -66,6 +72,10 @@ async function run() {
         const email = req.params.email
         const result = await users.findOne({email:email})
         res.send(result)
+    })
+    app.get('/users',verifyJWT,async(req,res)=>{
+      const result = await users.find().toArray();
+      res.send(result)
     })
 
     app.post('/user',async(req,res)=>{
@@ -91,7 +101,7 @@ async function run() {
       const search = req.query.search
       const option = {
         sort: {
-          date: 1
+          date: -1
         }
       }
         const result = await printCollection.find({
@@ -130,14 +140,27 @@ async function run() {
       const search = req.query.search
       const option = {
         sort: {
-          date: 1
+          date: -1
         }
       }
         const result = await paymentCollection.find({
         cuetId: {$regex: search, $options: "i"} },option).toArray();
         return res.send(result)
     })
+    // Admin Get All Payment Information Details
+    app.get('/adminpaymentdetails',verifyJWT,async(req,res)=>{
+      const search = req.query.search
+      const option = {
+        sort: {
+          date: -1
+        }
+      }
+        const result = await paymentHistory.find({
+        cuetId: {$regex: search, $options: "i"} },option).toArray();
+        return res.send(result)
+    })
 
+    
 
 
     // USER
@@ -150,12 +173,70 @@ async function run() {
       }
       const option = {
         sort: {
-          date: 1
+          date: -1
         }
       }
         const result = await printCollection.find(query,option).toArray();
         return res.send(result)
     })
+
+    // user payment history get and save to db
+    app.get('/userpaymentinfo',verifyJWT,async(req,res)=>{
+      const cuetId = req.query.cuetId
+      const query = {
+        cuetId : cuetId
+      }
+      const option = {
+        sort: {
+          date: -1
+        }
+      }
+        const result = await paymentHistory.find(query,option).toArray();
+        return res.send(result)
+    })
+
+    app.post('/userpaymentinfo',async(req,res)=>{
+      const paymentInfo = req.body;
+      const query = {
+        cuetId: paymentInfo.cuetId
+      }
+       const paymentUser = await paymentCollection.findOne(query)
+       const newDue = parseInt(paymentUser.due) - parseInt(paymentInfo.paid)
+       const newPaid = parseInt(paymentUser.paid) + parseInt(paymentInfo.paid)
+       const newDate = paymentInfo.date
+       const updatedDoc = {
+        $set:{
+          paid : newPaid,
+          due : newDue,
+          date : newDate
+        }
+    }
+    const updated = await paymentCollection.updateOne(query,updatedDoc)
+    const result = await paymentHistory.insertOne(paymentInfo)
+    res.send(result)
+    })
+
+
+    // Send Mail
+
+    app.post('/sendmail',(req,res)=>{
+      const mailData = req.body
+      console.log(mailData.sender)
+      const sender = mailData.sender
+      const receivers = mailData.to
+      const subject = mailData.subject
+      const htmlContent = mailData.htmlContent
+      tranEmailApi
+        .sendTransacEmail({
+          sender,
+          to: receivers,
+          subject: subject,
+          htmlContent: htmlContent
+        })
+        .then(console.log)
+        .catch(console.log)
+    })
+    
 
   } finally{
     // await client.close()
