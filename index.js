@@ -233,8 +233,8 @@ async function run() {
           subject: subject,
           htmlContent: htmlContent
         })
-        .then(console.log)
-        .catch(console.log)
+        .then()
+        .catch()
     })
     
 
